@@ -247,7 +247,9 @@ function parseMapAndGenerate(pixels, width, height) {
     }
 }
 
-// --- 5. 多端输入控制引擎 ---
+// --- 5. 多端输入控制引擎 (多点触控与双指分离) ---
+
+// 键盘控制逻辑
 document.addEventListener('keydown', (e) => {
     let key = e.key.toLowerCase();
     if(keys.hasOwnProperty(key)) keys[key] = true;
@@ -257,33 +259,78 @@ document.addEventListener('keyup', (e) => {
     if(keys.hasOwnProperty(key)) keys[key] = false;
 });
 
+// --- 摇杆控制逻辑 ---
 const joystickZone = document.getElementById('joystick-zone');
 const knob = document.getElementById('joystick-knob');
 let isJoyDragging = false;
+let joystickTouchId = null; // 专门记录控制摇杆的手指ID
 
+// 绑定触摸和鼠标事件
 joystickZone.addEventListener('touchstart', handleJoystickStart, {passive: false});
-joystickZone.addEventListener('touchmove', handleJoystickMove, {passive: false});
-joystickZone.addEventListener('touchend', handleJoystickEnd);
-joystickZone.addEventListener('mousedown', handleJoystickStart);
+document.addEventListener('touchmove', handleJoystickMove, {passive: false});
+document.addEventListener('touchend', handleJoystickEnd);
+document.addEventListener('touchcancel', handleJoystickEnd);
 
-function handleJoystickStart(e) { 
-    if(e.target === joystickZone || e.target === knob) {
-        isJoyDragging = true; 
-        handleJoystickMove(e); 
+joystickZone.addEventListener('mousedown', handleJoystickStart);
+document.addEventListener('mousemove', handleJoystickMove);
+document.addEventListener('mouseup', handleJoystickEnd);
+
+function handleJoystickStart(e) {
+    if (e.type === 'mousedown') {
+        isJoyDragging = true;
+        updateJoystickPosition(e.clientX, e.clientY);
+    } else if (e.type === 'touchstart') {
+        // 遍历所有新按下的手指
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            let t = e.changedTouches[i];
+            // 如果摇杆尚未被控制，且触摸点在摇杆区域内，则绑定该手指ID
+            if (joystickTouchId === null && (t.target === joystickZone || t.target === knob)) {
+                joystickTouchId = t.identifier;
+                isJoyDragging = true;
+                updateJoystickPosition(t.clientX, t.clientY);
+            }
+        }
     }
 }
-function handleJoystickEnd() {
+
+function handleJoystickMove(e) {
+    if (!isJoyDragging) return;
+    if (e.type === 'mousemove') {
+        updateJoystickPosition(e.clientX, e.clientY);
+    } else if (e.type === 'touchmove') {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            let t = e.changedTouches[i];
+            // 仅当手指ID与记录的摇杆ID匹配时才更新摇杆
+            if (t.identifier === joystickTouchId) {
+                updateJoystickPosition(t.clientX, t.clientY);
+            }
+        }
+    }
+}
+
+function handleJoystickEnd(e) {
+    if (e.type === 'mouseup') {
+        resetJoystick();
+    } else if (e.type === 'touchend' || e.type === 'touchcancel') {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            // 仅当离开屏幕的手指是控制摇杆的手指时，才复位摇杆
+            if (e.changedTouches[i].identifier === joystickTouchId) {
+                resetJoystick();
+            }
+        }
+    }
+}
+
+function resetJoystick() {
     isJoyDragging = false;
+    joystickTouchId = null;
     knob.style.transform = `translate(0px, 0px)`;
     input.forward = 0;
     input.right = 0;
 }
-function handleJoystickMove(e) {
-    if (!isJoyDragging) return;
-    e.preventDefault();
+
+function updateJoystickPosition(clientX, clientY) {
     const rect = joystickZone.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
     
@@ -293,23 +340,24 @@ function handleJoystickMove(e) {
     const angle = Math.atan2(dy, dx);
     
     knob.style.transform = `translate(${Math.cos(angle) * distance}px, ${Math.sin(angle) * distance}px)`;
-    
     input.right = Math.cos(angle) * (distance / 35);
     input.forward = Math.sin(angle) * (distance / 35); 
 }
 
+// --- 视角控制逻辑 ---
 let isLooking = false;
+let lookTouchId = null; // 专门记录控制视角的手指ID
 let lastLookX = 0;
 let lastLookY = 0;
 const gameScreen = document.getElementById('game-canvas');
 
+// PC 端鼠标控制
 gameScreen.addEventListener('mousedown', (e) => {
     isLooking = true;
     lastLookX = e.clientX;
     lastLookY = e.clientY;
 });
 document.addEventListener('mousemove', (e) => {
-    if(!isJoyDragging) handleJoystickMove(e); 
     if (!isLooking) return;
     let dx = e.clientX - lastLookX;
     let dy = e.clientY - lastLookY;
@@ -317,39 +365,53 @@ document.addEventListener('mousemove', (e) => {
     lastLookY = e.clientY;
     updateCameraRotation(dx, dy);
 });
-document.addEventListener('mouseup', (e) => {
-    isLooking = false;
-    if(isJoyDragging) handleJoystickEnd();
-});
+document.addEventListener('mouseup', () => { isLooking = false; });
 
+// 移动端触摸控制
 gameScreen.addEventListener('touchstart', (e) => {
-    for(let i = 0; i < e.touches.length; i++) {
-        let t = e.touches[i];
-        if(t.target === gameScreen) {
+    for(let i = 0; i < e.changedTouches.length; i++) {
+        let t = e.changedTouches[i];
+        // 绑定视角ID：前提是没有手指在控制视角，且触摸目标是画布而不是摇杆
+        if(lookTouchId === null && t.target === gameScreen) {
+            lookTouchId = t.identifier;
             isLooking = true;
             lastLookX = t.clientX;
             lastLookY = t.clientY;
-            break;
         }
     }
 }, {passive: false});
 
-gameScreen.addEventListener('touchmove', (e) => {
+document.addEventListener('touchmove', (e) => {
     if(!isLooking) return;
-    for(let i = 0; i < e.touches.length; i++) {
-        let t = e.touches[i];
-        if(t.target === gameScreen) {
+    for(let i = 0; i < e.changedTouches.length; i++) {
+        let t = e.changedTouches[i];
+        // 仅响应负责视角那根手指的移动
+        if(t.identifier === lookTouchId) {
             let dx = t.clientX - lastLookX;
             let dy = t.clientY - lastLookY;
             lastLookX = t.clientX;
             lastLookY = t.clientY;
             updateCameraRotation(dx, dy);
-            break;
         }
     }
 }, {passive: false});
 
-gameScreen.addEventListener('touchend', () => { isLooking = false; });
+document.addEventListener('touchend', (e) => {
+    for(let i = 0; i < e.changedTouches.length; i++) {
+        if(e.changedTouches[i].identifier === lookTouchId) {
+            isLooking = false;
+            lookTouchId = null;
+        }
+    }
+});
+document.addEventListener('touchcancel', (e) => {
+    for(let i = 0; i < e.changedTouches.length; i++) {
+        if(e.changedTouches[i].identifier === lookTouchId) {
+            isLooking = false;
+            lookTouchId = null;
+        }
+    }
+});
 
 function updateCameraRotation(dx, dy) {
     yaw -= dx * CONFIG.lookSensitivity;
@@ -357,7 +419,6 @@ function updateCameraRotation(dx, dy) {
     pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
     camera.rotation.set(pitch, yaw, 0, 'YXZ');
 }
-
 // --- 6. 游戏主循环与物理 ---
 function gameLoop() {
     if (!screens.game.classList.contains('active')) return;

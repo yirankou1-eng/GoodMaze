@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D 迷宫生成器</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div id="menu-screen" class="screen active">
+        <h1>迷宫目录</h1>
+        <div id="level-list">
+            </div>
+    </div>
+
+    <div id="game-ui" class="screen">
+        <div id="joystick-zone">
+            <div id="joystick-knob"></div>
+        </div>
+    </div>
+
+    <div id="victory-screen" class="screen">
+        <h1>通关成功！</h1>
+        <button class="level-btn" id="btn-return-menu">返回目录</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>

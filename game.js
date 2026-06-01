@@ -13,8 +13,8 @@ let input = { forward: 0, right: 0 };
 let keys = { w: false, a: false, s: false, d: false };
 
 let collisionGrid = [];   
-let goalGrid = []; // 新增：目标区域检测网格
-let animationFrameId; // 用于管理动画循环生命周期
+let goalGrid = []; 
+let animationFrameId; 
 
 const screens = {
     menu: document.getElementById('menu-screen'),
@@ -60,16 +60,39 @@ function hsvToRgbColor(h, s, v) {
     return new THREE.Color(r, g, b);
 }
 
-// --- 3. 游戏状态流转 ---
+// 动态生成像素网格边缘纹理 (黑色细竖线)
+function createWallEdgeTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    
+    // 底色填充白色（用于和 Three.js 材质颜色进行乘法混合）
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 64, 64);
+    
+    // 在左右边缘绘制细黑色竖线
+    ctx.fillStyle = '#111111'; 
+    const lineWidth = 2; // 竖线粗细
+    ctx.fillRect(0, 0, lineWidth, 64); // 左边缘
+    ctx.fillRect(64 - lineWidth, 0, lineWidth, 64); // 右边缘
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    // 使用最邻近过滤，确保线条保持锐利的像素边缘，不产生模糊过渡
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    return texture;
+}
+
+// --- 3. 游戏状态流转与自动目录检索 ---
 function showScreen(screenName) {
     Object.values(screens).forEach(s => s.classList.remove('active'));
     screens[screenName].classList.add('active');
 }
 
-// 核心清理：返回目录时中止渲染循环并释放 3D 对象
 document.getElementById('btn-return-menu').onclick = () => {
     showScreen('menu');
-    cancelAnimationFrame(animationFrameId); // 终止动画循环
+    cancelAnimationFrame(animationFrameId); 
     if (scene) {
         while(scene.children.length > 0){ 
             let child = scene.children[0];
@@ -78,22 +101,19 @@ document.getElementById('btn-return-menu').onclick = () => {
             scene.remove(child); 
         }
     }
-    // 重置输入状态
     keys = { w: false, a: false, s: false, d: false };
     input = { forward: 0, right: 0 };
 };
 
-// --- 替换为全新的自动检索目录代码 ---
+// 自动按顺序探测 maps 文件夹内的关卡图片
 const levelList = document.getElementById('level-list');
 let currentMapIndex = 1;
 
 function scanMapFolder() {
     let mapName = `pass${currentMapIndex}.png`;
     let mapPath = `maps/${mapName}`;
-    
     let tempImg = new Image();
     
-    // 如果图片加载成功，说明该关卡存在
     tempImg.onload = () => {
         let btn = document.createElement('button');
         btn.className = 'level-btn';
@@ -101,30 +121,20 @@ function scanMapFolder() {
         btn.onclick = () => loadLevel(mapPath);
         levelList.appendChild(btn);
         
-        // 索引+1，继续递归探测下一关
         currentMapIndex++;
-        scanMapFolder();
+        scanMapFolder(); 
     };
     
-    // 如果图片加载失败（通常是 404 Not Found），说明文件不存在，探测结束
     tempImg.onerror = () => {
         if (currentMapIndex === 1) {
-            // 连 pass1.png 都没找到的提示
             let errorMsg = document.createElement('p');
-            errorMsg.innerText = "未能在 maps 文件夹中找到 pass1.png，请检查图片命名与路径。";
+            errorMsg.innerText = "未找到 pass1.png，请检查图片命名或本地服务器状态。";
             levelList.appendChild(errorMsg);
-        } else {
-            console.log(`地图检索完毕，共找到 ${currentMapIndex - 1} 个关卡。`);
         }
     };
-    
-    // 触发请求
     tempImg.src = mapPath;
 }
-
-// 启动自动检索
 scanMapFolder();
-// ---------------------------
 
 // --- 4. 3D 渲染与地图生成 ---
 function initThreeJS() {
@@ -141,10 +151,11 @@ function initThreeJS() {
     yaw = 0; pitch = 0;
     camera.rotation.set(0, 0, 0);
     
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); 
+    // 提高环境光强度，避免阴影死黑
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); 
     scene.add(ambientLight);
     
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
     dirLight.position.set(CONFIG.mapWidth/2, 300, CONFIG.mapWidth/2);
     dirLight.castShadow = true;
     dirLight.shadow.camera.left = -CONFIG.mapWidth;
@@ -176,19 +187,14 @@ function loadLevel(imageSrc) {
         cancelAnimationFrame(animationFrameId);
         gameLoop();
     };
-    img.onerror = () => {
-        alert("无法加载地图图片，请检查文件路径或本地服务器状态。");
-        showScreen('menu');
-    };
 }
 
 function parseMapAndGenerate(pixels, width, height) {
     collisionGrid = Array(width).fill().map(() => Array(height).fill(false));
-    goalGrid = Array(width).fill().map(() => Array(height).fill(false)); // 初始化终点网格
+    goalGrid = Array(width).fill().map(() => Array(height).fill(false)); 
     let wallCount = 0;
     let spawns = [];
 
-    // 预检遍历
     for (let i = 0; i < pixels.length; i += 4) {
         if (pixels[i+3] === 0) continue; 
         let hsv = rgbToHsv(pixels[i], pixels[i+1], pixels[i+2]);
@@ -199,9 +205,16 @@ function parseMapAndGenerate(pixels, width, height) {
     }
 
     const geometry = new THREE.BoxGeometry(1, CONFIG.wallHeight, 1);
-    const randomHue = Math.floor(Math.random() * 360);
-    const wallColor = hsvToRgbColor(randomHue, 60, 100);
-    const material = new THREE.MeshLambertMaterial({ color: wallColor });
+    
+    // 统一颜色规范：H=20, S=40, V=90
+    const fixedWallColor = hsvToRgbColor(20, 40, 90);
+    // 使用 StandardMaterial 获取更好的光影体积感，并绑定程序化边缘纹理
+    const material = new THREE.MeshStandardMaterial({ 
+        color: fixedWallColor, 
+        map: createWallEdgeTexture(),
+        roughness: 0.9, // 高糙度，减少反光
+        metalness: 0.0
+    });
     
     const instancedMesh = new THREE.InstancedMesh(geometry, material, wallCount);
     instancedMesh.castShadow = true;
@@ -210,7 +223,6 @@ function parseMapAndGenerate(pixels, width, height) {
     const dummy = new THREE.Object3D();
     let wallIndex = 0;
 
-    // 二次遍历：写入数据
     for (let i = 0; i < pixels.length; i += 4) {
         if (pixels[i+3] === 0) continue;
         let hsv = rgbToHsv(pixels[i], pixels[i+1], pixels[i+2]);
@@ -219,20 +231,18 @@ function parseMapAndGenerate(pixels, width, height) {
         let z = Math.floor(pixelIndex / width);
 
         if (hsv.v < 20) {
-            // 写入墙壁物理体积
             dummy.position.set(x, CONFIG.wallHeight / 2, z); 
             dummy.updateMatrix();
             instancedMesh.setMatrixAt(wallIndex++, dummy.matrix);
             collisionGrid[x][z] = true;
         } else if (hsv.h > 100 && hsv.h < 150 && hsv.s > 50 && hsv.v > 50) {
-            // 写入终点触发区域 (检测 H 约等于 125 的绿色)
             goalGrid[x][z] = true;
         }
     }
     scene.add(instancedMesh);
 
     const floorGeo = new THREE.PlaneGeometry(width, height);
-    const floorMat = new THREE.MeshLambertMaterial({ color: 0xffffff }); 
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1.0 }); 
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(width/2 - 0.5, 0, height/2 - 0.5); 
@@ -247,9 +257,7 @@ function parseMapAndGenerate(pixels, width, height) {
     }
 }
 
-// --- 5. 多端输入控制引擎 (多点触控与双指分离) ---
-
-// 键盘控制逻辑
+// --- 5. 多端输入控制引擎 (支持双指独立触控) ---
 document.addEventListener('keydown', (e) => {
     let key = e.key.toLowerCase();
     if(keys.hasOwnProperty(key)) keys[key] = true;
@@ -259,13 +267,11 @@ document.addEventListener('keyup', (e) => {
     if(keys.hasOwnProperty(key)) keys[key] = false;
 });
 
-// --- 摇杆控制逻辑 ---
 const joystickZone = document.getElementById('joystick-zone');
 const knob = document.getElementById('joystick-knob');
 let isJoyDragging = false;
-let joystickTouchId = null; // 专门记录控制摇杆的手指ID
+let joystickTouchId = null; 
 
-// 绑定触摸和鼠标事件
 joystickZone.addEventListener('touchstart', handleJoystickStart, {passive: false});
 document.addEventListener('touchmove', handleJoystickMove, {passive: false});
 document.addEventListener('touchend', handleJoystickEnd);
@@ -280,10 +286,8 @@ function handleJoystickStart(e) {
         isJoyDragging = true;
         updateJoystickPosition(e.clientX, e.clientY);
     } else if (e.type === 'touchstart') {
-        // 遍历所有新按下的手指
         for (let i = 0; i < e.changedTouches.length; i++) {
             let t = e.changedTouches[i];
-            // 如果摇杆尚未被控制，且触摸点在摇杆区域内，则绑定该手指ID
             if (joystickTouchId === null && (t.target === joystickZone || t.target === knob)) {
                 joystickTouchId = t.identifier;
                 isJoyDragging = true;
@@ -300,7 +304,6 @@ function handleJoystickMove(e) {
     } else if (e.type === 'touchmove') {
         for (let i = 0; i < e.changedTouches.length; i++) {
             let t = e.changedTouches[i];
-            // 仅当手指ID与记录的摇杆ID匹配时才更新摇杆
             if (t.identifier === joystickTouchId) {
                 updateJoystickPosition(t.clientX, t.clientY);
             }
@@ -313,10 +316,7 @@ function handleJoystickEnd(e) {
         resetJoystick();
     } else if (e.type === 'touchend' || e.type === 'touchcancel') {
         for (let i = 0; i < e.changedTouches.length; i++) {
-            // 仅当离开屏幕的手指是控制摇杆的手指时，才复位摇杆
-            if (e.changedTouches[i].identifier === joystickTouchId) {
-                resetJoystick();
-            }
+            if (e.changedTouches[i].identifier === joystickTouchId) resetJoystick();
         }
     }
 }
@@ -333,25 +333,21 @@ function updateJoystickPosition(clientX, clientY) {
     const rect = joystickZone.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    
     let dx = clientX - centerX;
     let dy = clientY - centerY;
     const distance = Math.min(Math.sqrt(dx*dx + dy*dy), 35); 
     const angle = Math.atan2(dy, dx);
-    
     knob.style.transform = `translate(${Math.cos(angle) * distance}px, ${Math.sin(angle) * distance}px)`;
     input.right = Math.cos(angle) * (distance / 35);
     input.forward = Math.sin(angle) * (distance / 35); 
 }
 
-// --- 视角控制逻辑 ---
 let isLooking = false;
-let lookTouchId = null; // 专门记录控制视角的手指ID
+let lookTouchId = null; 
 let lastLookX = 0;
 let lastLookY = 0;
 const gameScreen = document.getElementById('game-canvas');
 
-// PC 端鼠标控制
 gameScreen.addEventListener('mousedown', (e) => {
     isLooking = true;
     lastLookX = e.clientX;
@@ -367,11 +363,9 @@ document.addEventListener('mousemove', (e) => {
 });
 document.addEventListener('mouseup', () => { isLooking = false; });
 
-// 移动端触摸控制
 gameScreen.addEventListener('touchstart', (e) => {
     for(let i = 0; i < e.changedTouches.length; i++) {
         let t = e.changedTouches[i];
-        // 绑定视角ID：前提是没有手指在控制视角，且触摸目标是画布而不是摇杆
         if(lookTouchId === null && t.target === gameScreen) {
             lookTouchId = t.identifier;
             isLooking = true;
@@ -385,7 +379,6 @@ document.addEventListener('touchmove', (e) => {
     if(!isLooking) return;
     for(let i = 0; i < e.changedTouches.length; i++) {
         let t = e.changedTouches[i];
-        // 仅响应负责视角那根手指的移动
         if(t.identifier === lookTouchId) {
             let dx = t.clientX - lastLookX;
             let dy = t.clientY - lastLookY;
@@ -419,6 +412,7 @@ function updateCameraRotation(dx, dy) {
     pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
     camera.rotation.set(pitch, yaw, 0, 'YXZ');
 }
+
 // --- 6. 游戏主循环与物理 ---
 function gameLoop() {
     if (!screens.game.classList.contains('active')) return;
@@ -450,24 +444,17 @@ function gameLoop() {
     let gridX = Math.round(nextX);
     let gridZ = Math.round(nextZ);
     
-    // 边界保护与墙壁检测
     if (gridX >= 0 && gridX < collisionGrid.length && gridZ >= 0 && gridZ < collisionGrid[0].length) {
-        if (!collisionGrid[gridX][Math.round(camera.position.z)]) {
-            camera.position.x = nextX;
-        }
-        if (!collisionGrid[Math.round(camera.position.x)][gridZ]) {
-            camera.position.z = nextZ;
-        }
+        if (!collisionGrid[gridX][Math.round(camera.position.z)]) camera.position.x = nextX;
+        if (!collisionGrid[Math.round(camera.position.x)][gridZ]) camera.position.z = nextZ;
     }
 
-    // 新增：极速区域终点检测
     let currentX = Math.round(camera.position.x);
     let currentZ = Math.round(camera.position.z);
     
     if (currentX >= 0 && currentX < goalGrid.length && currentZ >= 0 && currentZ < goalGrid[0].length) {
         if (goalGrid[currentX][currentZ]) {
             showScreen('victory');
-            // 触发通关时直接跳出函数，停止请求下一帧动画
             return; 
         }
     }

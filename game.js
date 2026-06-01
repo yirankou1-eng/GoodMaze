@@ -83,15 +83,48 @@ document.getElementById('btn-return-menu').onclick = () => {
     input = { forward: 0, right: 0 };
 };
 
-const levels = ['pass1.png', 'pass2.png'];
+// --- 替换为全新的自动检索目录代码 ---
 const levelList = document.getElementById('level-list');
-levels.forEach(level => {
-    let btn = document.createElement('button');
-    btn.className = 'level-btn';
-    btn.innerText = level;
-    btn.onclick = () => loadLevel(`maps/${level}`);
-    levelList.appendChild(btn);
-});
+let currentMapIndex = 1;
+
+function scanMapFolder() {
+    let mapName = `pass${currentMapIndex}.png`;
+    let mapPath = `maps/${mapName}`;
+    
+    let tempImg = new Image();
+    
+    // 如果图片加载成功，说明该关卡存在
+    tempImg.onload = () => {
+        let btn = document.createElement('button');
+        btn.className = 'level-btn';
+        btn.innerText = `关卡 ${currentMapIndex} (${mapName})`;
+        btn.onclick = () => loadLevel(mapPath);
+        levelList.appendChild(btn);
+        
+        // 索引+1，继续递归探测下一关
+        currentMapIndex++;
+        scanMapFolder();
+    };
+    
+    // 如果图片加载失败（通常是 404 Not Found），说明文件不存在，探测结束
+    tempImg.onerror = () => {
+        if (currentMapIndex === 1) {
+            // 连 pass1.png 都没找到的提示
+            let errorMsg = document.createElement('p');
+            errorMsg.innerText = "未能在 maps 文件夹中找到 pass1.png，请检查图片命名与路径。";
+            levelList.appendChild(errorMsg);
+        } else {
+            console.log(`地图检索完毕，共找到 ${currentMapIndex - 1} 个关卡。`);
+        }
+    };
+    
+    // 触发请求
+    tempImg.src = mapPath;
+}
+
+// 启动自动检索
+scanMapFolder();
+// ---------------------------
 
 // --- 4. 3D 渲染与地图生成 ---
 function initThreeJS() {

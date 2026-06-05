@@ -16,11 +16,12 @@ let collisionGrid = [];
 let goalGrid = []; 
 let animationFrameId; 
 
+// 注册了 editor 界面
 const screens = {
     menu: document.getElementById('menu-screen'),
     game: document.getElementById('game-ui'),
-    victory: document.getElementById('victory-screen')
-    editor: document.getElementById('editor-screen')
+    victory: document.getElementById('victory-screen'),
+    editor: document.getElementById('editor-screen') 
 };
 
 // --- 2. 颜色数学转换模块 ---
@@ -114,7 +115,7 @@ function scanMapFolder() {
 }
 scanMapFolder();
 
-// 插入以下代码块：加载本地自定义迷宫
+// 加载本地自定义迷宫
 function loadLocalCustomMaze() {
     const savedData = localStorage.getItem('customMazeData');
     if (savedData) {
@@ -127,7 +128,6 @@ function loadLocalCustomMaze() {
     }
 }
 loadLocalCustomMaze();
-// 插入结束
 
 // --- 4. 3D 渲染与地图生成 ---
 function initThreeJS() {
@@ -136,7 +136,6 @@ function initThreeJS() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     
-    // 修改：将 PCFSoftShadowMap 更改为 PCFShadowMap，以获得锐利的边缘
     renderer.shadowMap.type = THREE.PCFShadowMap; 
 
     scene = new THREE.Scene();
@@ -150,19 +149,16 @@ function initThreeJS() {
     scene.add(ambientLight);
     
     const spotLight = new THREE.SpotLight(0xffffff, 1.2);
-    // 修改：将光源高度从 800 提升至 2000
     spotLight.position.set(CONFIG.mapWidth / 2, 2000, CONFIG.mapWidth / 2);
     spotLight.target.position.set(CONFIG.mapWidth / 2, 0, CONFIG.mapWidth / 2);
     
     spotLight.angle = Math.PI / 3;
-    // 修改：将半影区衰减设为 0，使光锥边缘变得极其锐利
     spotLight.penumbra = 0.0; 
     spotLight.castShadow = true;
     
     spotLight.shadow.mapSize.width = 2048;
     spotLight.shadow.mapSize.height = 2048;
     spotLight.shadow.camera.near = 100;
-    // 修改：由于光源拉高，必须延长阴影相机的最远渲染距离以防止阴影丢失
     spotLight.shadow.camera.far = 3000; 
     spotLight.shadow.bias = -0.001; 
 

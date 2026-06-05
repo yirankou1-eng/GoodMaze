@@ -12,6 +12,7 @@
 
     <div id="menu-screen" class="screen active">
         <h1>迷宫目录</h1>
+        <button id="btn-open-editor" class="level-btn" style="position: absolute; top: 20px; right: 20px;">自定义地图</button>
         <div id="level-list">
             </div>
     </div>
@@ -26,6 +27,28 @@
         <h1>通关成功！</h1>
         <button class="level-btn" id="btn-return-menu">返回目录</button>
     </div>
+
+    <div id="editor-screen" class="screen">
+        <h1>绘制自定义迷宫</h1>
+        
+        <div id="editor-tools">
+            <button id="tool-wall" class="tool-btn active">墙壁 (黑)</button>
+            <button id="tool-goal" class="tool-btn">终点 (绿)</button>
+            <button id="tool-spawn" class="tool-btn">起点 (红)</button>
+            <label>画笔大小: <input type="range" id="brush-size" min="1" max="20" value="5"></label>
+        </div>
+
+        <div id="editor-canvas-container">
+            <canvas id="editor-canvas-base" width="300" height="300"></canvas>
+            <canvas id="editor-canvas-overlay" width="300" height="300"></canvas>
+        </div>
+
+        <div>
+            <button id="btn-finish-editor" class="level-btn">完成并保存试玩</button>
+            <button id="btn-close-editor" class="level-btn">返回目录</button>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="game.js"></script>

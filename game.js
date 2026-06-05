@@ -20,6 +20,7 @@ const screens = {
     menu: document.getElementById('menu-screen'),
     game: document.getElementById('game-ui'),
     victory: document.getElementById('victory-screen')
+    editor: document.getElementById('editor-screen')
 };
 
 // --- 2. 颜色数学转换模块 ---
@@ -112,6 +113,21 @@ function scanMapFolder() {
     tempImg.src = mapPath;
 }
 scanMapFolder();
+
+// 插入以下代码块：加载本地自定义迷宫
+function loadLocalCustomMaze() {
+    const savedData = localStorage.getItem('customMazeData');
+    if (savedData) {
+        let btn = document.createElement('button');
+        btn.className = 'level-btn';
+        btn.innerText = '试玩 本地自定义迷宫';
+        btn.style.borderColor = '#00ff00';
+        btn.onclick = () => loadLevel(savedData);
+        levelList.prepend(btn);
+    }
+}
+loadLocalCustomMaze();
+// 插入结束
 
 // --- 4. 3D 渲染与地图生成 ---
 function initThreeJS() {
@@ -457,3 +473,95 @@ function gameLoop() {
     renderer.render(scene, camera);
     animationFrameId = requestAnimationFrame(gameLoop);
 }
+
+// --- 7. 自定义地图编辑器模块 ---
+const canvasBase = document.getElementById('editor-canvas-base');
+const canvasOverlay = document.getElementById('editor-canvas-overlay');
+const ctxBase = canvasBase.getContext('2d', { willReadFrequently: true });
+const ctxOverlay = canvasOverlay.getContext('2d');
+
+let isEditorDrawing = false;
+let currentTool = 'wall';
+let spawnCoords = null; 
+let lastEdX = 0, lastEdY = 0;
+
+document.getElementById('btn-open-editor').onclick = () => {
+    showScreen('editor');
+    ctxBase.fillStyle = '#ffffff';
+    ctxBase.fillRect(0, 0, 300, 300);
+    ctxOverlay.clearRect(0, 0, 300, 300);
+    spawnCoords = null;
+};
+
+document.getElementById('btn-close-editor').onclick = () => {
+    showScreen('menu');
+};
+
+document.querySelectorAll('.tool-btn').forEach(btn => {
+    btn.onclick = function() {
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentTool = this.id.replace('tool-', '');
+    };
+});
+
+canvasBase.addEventListener('mousedown', (e) => {
+    const rect = canvasBase.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (currentTool === 'spawn') {
+        spawnCoords = { x: Math.round(x), y: Math.round(y) };
+        ctxOverlay.clearRect(0, 0, 300, 300);
+        ctxOverlay.fillStyle = '#FF0000'; 
+        ctxOverlay.fillRect(spawnCoords.x - 1, spawnCoords.y - 1, 3, 3);
+    } else {
+        isEditorDrawing = true;
+        lastEdX = x; lastEdY = y;
+        drawOnBase(x, y);
+    }
+});
+
+canvasBase.addEventListener('mousemove', (e) => {
+    if (!isEditorDrawing || currentTool === 'spawn') return;
+    const rect = canvasBase.getBoundingClientRect();
+    drawOnBase(e.clientX - rect.left, e.clientY - rect.top);
+});
+
+document.addEventListener('mouseup', () => { isEditorDrawing = false; });
+
+function drawOnBase(x, y) {
+    const size = document.getElementById('brush-size').value;
+    ctxBase.lineWidth = size;
+    ctxBase.lineCap = 'round';
+    ctxBase.lineJoin = 'round';
+    ctxBase.strokeStyle = currentTool === 'wall' ? '#000000' : '#00FF15'; 
+
+    ctxBase.beginPath();
+    ctxBase.moveTo(lastEdX, lastEdY);
+    ctxBase.lineTo(x, y);
+    ctxBase.stroke();
+    lastEdX = x; lastEdY = y;
+}
+
+document.getElementById('btn-finish-editor').onclick = () => {
+    if (!spawnCoords) {
+        alert("必须放置一个红色的起点！");
+        return;
+    }
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = 300; exportCanvas.height = 300;
+    const exCtx = exportCanvas.getContext('2d');
+    exCtx.drawImage(canvasBase, 0, 0);
+    exCtx.drawImage(canvasOverlay, 0, 0);
+
+    const dataURL = exportCanvas.toDataURL('image/png');
+    localStorage.setItem('customMazeData', dataURL);
+
+    Array.from(levelList.children).forEach(child => {
+        if (child.innerText.includes('本地自定义迷宫')) child.remove();
+    });
+    loadLocalCustomMaze();
+    loadLevel(dataURL);
+};
